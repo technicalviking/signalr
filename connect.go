@@ -26,12 +26,18 @@ type negotiationResponse struct {
 }
 
 func (c *client) Connect(hubs []string) {
+	if c.State() == Broken {
+		c.errChan <- ConnectError("Client in broken state.  Check config or create new client instance.")
+		return
+	}
+
 	c.state = Connecting
 
 	nResp := c.negotiate()
 	c.connectWebSocket(nResp, hubs)
 
-	go c.beginDispatchLoop(nResp.KeepAliveTimeout)
+	go c.listenToWebSocketData(time.Second * time.Duration(nResp.KeepAliveTimeout))
+	//go c.beginDispatchLoop(nResp.KeepAliveTimeout)
 }
 
 func (c *client) negotiate() *negotiationResponse {
@@ -111,20 +117,21 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 	}
 
 	var err error
-	for i := 0; i < 5; i++ {
-		backoff := math.Pow(2.0, float64(i))
-		time.Sleep(time.Second * time.Duration(backoff))
-		if c.socket, _, err = socketDialer.Dial(connectionURL.String(), c.config.RequestHeaders); err != nil {
-			c.errChan <- SocketConnectionError(err.Error())
-			continue
+
+	for i := 0; i <= 5; i++ {
+		if i == 5 {
+			c.stateChan <- Broken
+			c.errChan <- SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION.")
+			break
 		}
 
-		//if the code gets here, a connection was successfully established.
-		return
-	}
+		backoff := math.Pow(2.0, float64(i))
+		time.Sleep(time.Second * time.Duration(backoff))
 
-	c.stateChan <- Broken
-	c.errChan <- SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION.")
+		if c.socket, _, err = socketDialer.Dial(connectionURL.String(), c.config.RequestHeaders); err != nil {
+			c.errChan <- SocketConnectionError(err.Error())
+		}
+	}
 }
 
 func castHubNamesToString(hubs []string) []byte {

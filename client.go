@@ -1,9 +1,13 @@
 package signalr
 
 import (
+	"encoding/json"
+	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -23,10 +27,11 @@ type ConnectionState int
 
 //SignalR Client State Values
 const (
-	Disconnected ConnectionState = iota
+	Ready ConnectionState = iota
 	Connecting
 	Reconnecting
 	Connected
+	Disconnected
 	Broken
 )
 
@@ -51,6 +56,14 @@ type Config struct {
 	RequestHeaders http.Header `json:"request_headers,omitempty"`
 }
 
+type serverMessage struct {
+	Cursor     string            `json:"C"`
+	Data       []json.RawMessage `json:"M"`
+	Result     json.RawMessage   `json:"R"`
+	Identifier string            `json:"I"`
+	Error      string            `json:"E"`
+}
+
 //client implemntation of Connection interface.
 type client struct {
 	//persist sanitized config
@@ -61,10 +74,25 @@ type client struct {
 	stateMutex sync.RWMutex
 	//internal channel used to trigger state changes
 	stateChan chan ConnectionState
+
+	//active websocket, assigned durinng connection process.
+	socket *websocket.Conn
+
+	//internal pipe for server messages
+	responseChannels     map[string]chan *serverMessage
+	responseChannelMutex sync.RWMutex
+
+	//pipes read by lib consumers:
+
 	//channel used to read errors.
 	errChan chan error
 
-	socket *websocket.Conn
+	//channel used to read message stream from peer
+	messageChan chan MessageDataPayload
+
+	//external pipe for server messages
+	/*routedMessageChan      chan interface{}
+	routedMessageChanMutex sync.RWMutex */
 }
 
 //meant to be run as a goroutine
@@ -73,6 +101,62 @@ func (c *client) trackState() {
 		c.stateMutex.Lock()
 		c.state = newState
 		c.stateMutex.Unlock()
+	}
+}
+
+//listenToWebSocketData receives all signals from the current websocket.  does not handle socket signal timeout logic AFAIK
+func (c *client) listenToWebSocketData(timeout time.Duration) {
+	var (
+		data    []byte
+		message serverMessage
+	)
+
+	for {
+		c.socket.SetReadDeadline(time.Now().Add(timeout))
+		if err := c.socket.ReadJSON(&message); err != nil {
+			switch err.(type) {
+			case *json.UnmarshalTypeError:
+				c.errChan <- SocketError(fmt.Sprintf("Unable to parse message from payload %s: %s\n", string(data), err.Error()))
+				continue
+			case net.Error:
+				c.errChan <- TimeoutError(fmt.Sprintf("Keepalive timeout reached: %s", err.Error()))
+			default:
+				c.errChan <- SocketError(err.Error())
+			}
+
+			c.stateChan <- Disconnected
+			return
+		}
+
+		//no error
+		c.dispatchMessage(&message)
+	}
+
+}
+
+func (c *client) dispatchMessage(msg *serverMessage) {
+	if len(msg.Identifier) > 0 {
+		c.responseChan(msg.Identifier) <- msg
+		c.delResponseChan(msg.Identifier)
+	} else {
+		c.responseChan("default") <- msg
+	}
+}
+
+func (c *client) responseChan(key string) chan *serverMessage {
+	c.responseChannelMutex.RLock()
+	defer c.responseChannelMutex.RUnlock()
+
+	return c.responseChannels[key]
+}
+
+func (c *client) delResponseChan(key string) {
+	c.responseChannelMutex.Lock()
+	defer c.responseChannelMutex.Unlock()
+
+	if rc, ok := c.responseChannels[key]; ok {
+		close(rc)
+		delete(c.responseChannels, key)
 	}
 }
 
@@ -106,9 +190,12 @@ func New(c Config) Connection {
 
 	new := &client{
 		config:    c,
-		state:     Disconnected,
+		state:     Ready,
 		stateChan: make(chan ConnectionState, 1),
 		errChan:   make(chan error, 2),
+		responseChannels: map[string]chan *serverMessage{
+			"default": make(chan *serverMessage),
+		},
 	}
 
 	go new.trackState()
