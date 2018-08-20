@@ -48,3 +48,10 @@ type HubMessageError string
 func (hme HubMessageError) Error() string {
 	return fmt.Sprintf("HubMessageError: %s", string(hme))
 }
+
+// CallHubError error generated during an attempt to send a message to the Signalr hub
+type CallHubError string
+
+func (che CallHubError) Error() string {
+	return fmt.Sprintf("CallHubError: %s", string(che))
+}

@@ -61,7 +61,7 @@ func (c *client) negotiate() *negotiationResponse {
 
 	if request, err = http.NewRequest("GET", negotiationURL.String(), nil); err != nil {
 		c.errChan <- NegotiationError(err.Error())
-		c.stateChan <- Broken
+		c.setState(Broken)
 		return nil
 	}
 
@@ -73,6 +73,7 @@ func (c *client) negotiate() *negotiationResponse {
 
 	if response, err = c.config.Client.Do(request); err != nil {
 		c.errChan <- NegotiationError(err.Error())
+		c.setState(Broken)
 		return nil
 	}
 
@@ -80,12 +81,14 @@ func (c *client) negotiate() *negotiationResponse {
 
 	if body, err = ioutil.ReadAll(response.Body); err != nil {
 		c.errChan <- NegotiationError(err.Error())
+		c.setState(Broken)
 		return nil
 	}
 
 	if err = json.Unmarshal(body, &result); err != nil {
 		err = fmt.Errorf("Failed to parse response '%s': %s", string(body), err.Error())
 		c.errChan <- NegotiationError(err.Error())
+		c.setState(Broken)
 		return nil
 	}
 
@@ -120,7 +123,7 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 
 	for i := 0; i <= 5; i++ {
 		if i == 5 {
-			c.stateChan <- Broken
+			c.setState(Broken)
 			c.errChan <- SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION.")
 			break
 		}
@@ -128,6 +131,7 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 		backoff := math.Pow(2.0, float64(i))
 		time.Sleep(time.Second * time.Duration(backoff))
 
+		//@todo incorporate the currently ignored http response parameter into socketConnectionError
 		if c.socket, _, err = socketDialer.Dial(connectionURL.String(), c.config.RequestHeaders); err != nil {
 			c.errChan <- SocketConnectionError(err.Error())
 		}
