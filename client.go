@@ -143,22 +143,22 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 		}
 
 		//no error
-		c.dispatchMessage(&message)
+		go c.dispatchMessage(message)
 	}
 
 }
 
-func (c *client) dispatchMessage(msg *serverMessage) {
+func (c *client) dispatchMessage(msg serverMessage) {
 	if len(msg.Identifier) > 0 {
 		if rc := c.responseChan(msg.Identifier); rc != nil {
-			rc <- msg
+			rc <- &msg
 			c.delResponseChan(msg.Identifier)
 		} else {
 			c.sendErr(HubMessageError(fmt.Sprintf("No listener found for message with ID %s", msg.Identifier)))
 		}
 
 	} else {
-		c.responseChan("default") <- msg
+		c.responseChan("default") <- &msg
 	}
 }
 

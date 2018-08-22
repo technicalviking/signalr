@@ -53,6 +53,12 @@ The one exception to the above rule is scenarios where calls to `CallHub` result
 
 That errChan above?  It gives ALL the errors from the lib, whether or not they're from the signalr peer.  You might be wondering if that makes the application more difficult to debug, but I've tried to cover that front too.  The error chan will NEVER output *just* an error.  It will be one of the error types defined in this lib's `errors.go` file.  If you're not sure which one you've got, you can do a type switch, or alternately parse the resulting string (each type's implementation of the Error interface indicates its own type).
 
+### Miscellaneous
+
+The websocket library used under the hood is github.com/gorilla/websocket.
+
+Due to my own personal requirements using this lib, I've made efforts to have instances of the connection client be threadsafe, as far as being able to send messages from or read messages into any number of goroutines.
+
 
 ## TODOs
 
