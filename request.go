@@ -17,7 +17,7 @@ type CallHubPayload struct {
 }
 
 // CallHub send a message to the signalr peer.  Sets unique identifier in threadsafe way.
-func (c *client) CallHub(payload CallHubPayload) json.RawMessage {
+func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
 	//increment the message identifier.
 	c.callHubIDMutex.Lock()
 	payload.identifier = fmt.Sprintf("%d", c.nextID)
@@ -32,7 +32,7 @@ func (c *client) CallHub(payload CallHubPayload) json.RawMessage {
 	//attempt to marshal the payload
 	if data, err = json.Marshal(payload); err != nil {
 		c.sendErr(CallHubError(err.Error()))
-		return nil
+		return
 	}
 
 	//set the response future channel
@@ -48,10 +48,15 @@ func (c *client) CallHub(payload CallHubPayload) json.RawMessage {
 
 	if response, ok = <-(c.responseChan(payload.identifier)); !ok {
 		c.sendErr(CallHubError(fmt.Sprintf("Call to method %s returned no result.", payload.Method)))
-		return nil
+		return
 	}
 
-	return response.Result
+	if err = json.Unmarshal(response.Result, resultPayload); err != nil {
+		e := fmt.Sprintf("Unable to parse response into type provided for call to %s: %s", payload.Method, string(response.Result))
+		c.sendErr(CallHubError(e))
+	}
+
+	return
 }
 
 func (c *client) sendHubMessage(data []byte) {
