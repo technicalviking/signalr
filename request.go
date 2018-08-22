@@ -3,6 +3,8 @@ package signalr
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/gorilla/websocket"
 )
 
 //CallHubPayload parameters for sending message to signalr hub.  identifier is set internally.  Arguments must be json marshallable.
@@ -14,6 +16,7 @@ type CallHubPayload struct {
 	identifier string `json:"I"`
 }
 
+// CallHub send a message to the signalr peer.  Sets unique identifier in threadsafe way.
 func (c *client) CallHub(payload CallHubPayload) json.RawMessage {
 	//increment the message identifier.
 	c.callHubIDMutex.Lock()
@@ -21,53 +24,43 @@ func (c *client) CallHub(payload CallHubPayload) json.RawMessage {
 	c.nextID++
 	c.callHubIDMutex.Unlock()
 
+	var (
+		data []byte
+		err  error
+	)
+
 	//attempt to marshal the payload
-	if data, err := json.Marshal(payload); err != nil {
+	if data, err = json.Marshal(payload); err != nil {
 		c.sendErr(CallHubError(err.Error()))
 		return nil
 	}
 
 	//set the response future channel
-	/*
-		responseKey := request.Identifier
-		responseChannel := sc.createResponseFuture(responseKey)
-	*/
+	c.setResponseChan(payload.identifier)
 
-	//send the message payload to the signalr peer (port this method?)
-	/* 	if err := sc.sendHubMessage(data); err != nil {
-		return nil, err
-	} */
+	//send the message payload to the signalr peer
+	c.sendHubMessage(data)
 
-	//get message from response.
+	var (
+		response *serverMessage
+		ok       bool
+	)
 
-	//if response has an error, pipe that to the error chan.
+	if response, ok = <-(c.responseChan(payload.identifier)); !ok {
+		c.sendErr(CallHubError(fmt.Sprintf("Call to method %s returned no result.", payload.Method)))
+		return nil
+	}
 
-	//return the result
+	return response.Result
+}
 
-	/*
+func (c *client) sendHubMessage(data []byte) {
+	c.socketWriteMutex.Lock()
+	defer c.socketWriteMutex.Unlock()
 
-	   OLD CODEOLD CODEOLD CODEOLD CODEOLD CODE
-	   OLD CODEOLD CODEOLD CODEOLD CODEOLD CODE
-	   OLD CODEOLD CODEOLD CODEOLD CODEOLD CODE
+	if err := c.socket.WriteMessage(websocket.TextMessage, data); err != nil {
+		c.sendErr(SocketError(err.Error()))
+	}
 
-
-	   	responseKey := request.Identifier
-	   	responseChannel := sc.createResponseFuture(responseKey)
-
-	   	var (
-	   		response *serverMessage
-	   		ok       bool
-	   	)
-
-	   	if response, ok = <-responseChannel; !ok {
-	   		return nil, fmt.Errorf("Call to server returned no result")
-	   	}
-
-	   	if len(response.Error) > 0 {
-	   		return nil, fmt.Errorf("%s", response.Error)
-	   	}
-
-			 return response.Result, nil */
-
-	return nil
+	return
 }

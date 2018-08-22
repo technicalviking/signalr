@@ -76,6 +76,8 @@ type client struct {
 
 	//active websocket, assigned durinng connection process.
 	socket *websocket.Conn
+	//writing to the signalr websocket should be a threadsafe operation to conform to gorlla/websocket docs re: one go-routine for writing.
+	socketWriteMutex sync.Mutex
 
 	//internal pipe for server messages
 	responseChannels     map[string]chan *serverMessage
@@ -116,7 +118,7 @@ func (c *client) State() ConnectionState {
 	return c.state
 }
 
-//listenToWebSocketData receives all signals from the current websocket.  does not handle socket signal timeout logic AFAIK
+//listenToWebSocketData receives all signals from the current websocket.  uses timeout based on signalr negotiation response
 func (c *client) listenToWebSocketData(timeout time.Duration) {
 	var (
 		data    []byte
@@ -148,8 +150,13 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 
 func (c *client) dispatchMessage(msg *serverMessage) {
 	if len(msg.Identifier) > 0 {
-		c.responseChan(msg.Identifier) <- msg
-		c.delResponseChan(msg.Identifier)
+		if rc := c.responseChan(msg.Identifier); rc != nil {
+			rc <- msg
+			c.delResponseChan(msg.Identifier)
+		} else {
+			c.sendErr(HubMessageError(fmt.Sprintf("No listener found for message with ID %s", msg.Identifier)))
+		}
+
 	} else {
 		c.responseChan("default") <- msg
 	}
@@ -160,6 +167,13 @@ func (c *client) responseChan(key string) chan *serverMessage {
 	defer c.responseChannelMutex.RUnlock()
 
 	return c.responseChannels[key]
+}
+
+func (c *client) setResponseChan(key string) {
+	c.responseChannelMutex.Lock()
+	defer c.responseChannelMutex.Unlock()
+
+	c.responseChannels[key] = make(chan *serverMessage)
 }
 
 func (c *client) delResponseChan(key string) {

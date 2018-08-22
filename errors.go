@@ -25,7 +25,7 @@ func (sce SocketConnectionError) Error() string {
 	return fmt.Sprintf("SocketConnectionError: %s", string(sce))
 }
 
-//SocketError error created when websocket.ReadMessage returns an error..
+//SocketError error created when websocket.ReadMessage or websocket.WriteMessage returns an error..
 type SocketError string
 
 // Error implement Error interface
