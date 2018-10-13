@@ -41,7 +41,7 @@ type Config struct {
 	Client *http.Client
 
 	//URL for the signalr endpoint.  uses url.URL package to ensure valid url is used.
-	ConnectionURL url.URL `json:"url"`
+	ConnectionURL *url.URL `json:"url"`
 
 	//URI path for negotiation portion of the connection.  Defaults to "/signalr/negotiate"
 	NegotiatePath string `json:"negotiate_path,omitempty"`
@@ -205,8 +205,17 @@ func (c *client) ListenToHubResponses() <-chan MessageDataPayload {
 
 //New generates a new client based on user data.  Specifying an invalid url will not fail until the connection steps.
 func New(c Config) Connection {
+
+	if c.ConnectionURL == nil {
+		c.ConnectionURL = &url.URL{}
+	}
+
 	// Don't care what the prior scheme was.  Force HTTPS.
 	c.ConnectionURL.Scheme = "https"
+
+	if c.ConnectionURL.Host == "" {
+		c.ConnectionURL.Host = "localhost:1337"
+	}
 
 	if c.NegotiatePath == "" {
 		c.NegotiatePath = negotiatePath
