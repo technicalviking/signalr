@@ -140,3 +140,21 @@ func TestNewCustom(t *testing.T) {
 	}
 
 }
+
+func TestsetState(t *testing.T) {
+	//Assemble
+
+	cfg := Config{}
+
+	conn := New(cfg) //set's intial state.
+	testClient := conn.(*client)
+
+	//Act
+	testClient.setState(Connecting)
+
+	//Assert
+
+	if testClient.state != Connecting {
+		t.Errorf("setState not acting like a proper setter.  expected %+v, got %+v", Connecting, testClient.state)
+	}
+}
