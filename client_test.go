@@ -158,3 +158,18 @@ func TestsetState(t *testing.T) {
 		t.Errorf("setState not acting like a proper setter.  expected %+v, got %+v", Connecting, testClient.state)
 	}
 }
+
+func TestState(t *testing.T) {
+	cfg := Config{}
+	conn := New(cfg)
+	testClient := conn.(*client)
+
+	//Act
+	testClient.setState(Broken)
+
+	//Assert
+
+	if testClient.state != testClient.State() {
+		t.Errorf("getState not retrieving proper value.  expected %+v, got %+v", testClient.state, testClient.State())
+	}
+}
