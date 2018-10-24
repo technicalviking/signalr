@@ -101,7 +101,7 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 	}
 
 	connectionURL := url.URL{
-		Scheme: c.config.ConnectionURL.Scheme,
+		Scheme: "wss",
 		Host:   c.config.ConnectionURL.Host,
 		Path:   c.config.ConnectPath,
 		RawQuery: url.Values{
@@ -130,10 +130,11 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 
 		backoff := math.Pow(2.0, float64(i))
 		time.Sleep(time.Second * time.Duration(backoff))
-
 		//@todo incorporate the currently ignored http response parameter into socketConnectionError
 		if c.socket, _, err = socketDialer.Dial(connectionURL.String(), c.config.RequestHeaders); err != nil {
 			c.errChan <- SocketConnectionError(err.Error())
+		} else {
+			break
 		}
 	}
 }

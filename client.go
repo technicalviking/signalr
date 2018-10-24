@@ -16,10 +16,9 @@ import (
 const (
 	defaultScheme string = "https"
 	socketScheme  string = "wss"
-	signalRPath   string = "signalr"
-	negotiatePath string = signalRPath + "/negotiate"
-	connectPath   string = signalRPath + "/connect"
-	reconnectPath string = signalRPath + "/reconnect"
+	negotiatePath string = "negotiate"
+	connectPath   string = "connect"
+	reconnectPath string = "reconnect"
 )
 
 //ConnectionState int representing current state of the SignalR Client
@@ -237,9 +236,9 @@ func New(c Config) Connection {
 		config:  c,
 		state:   Ready,
 		nextID:  1,
-		errChan: make(chan error, 2),
+		errChan: make(chan error, 5),
 		responseChannels: map[string]chan *serverMessage{
-			"default": make(chan *serverMessage),
+			"default": make(chan *serverMessage, 5),
 		},
 	}
 
