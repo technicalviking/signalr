@@ -9,18 +9,17 @@ import (
 
 //CallHubPayload parameters for sending message to signalr hub.  identifier is set internally.  Arguments must be json marshallable.
 type CallHubPayload struct {
-	Hub       string        `json:"H"`
-	Method    string        `json:"M"`
-	Arguments []interface{} `json:"A"`
-
-	identifier string `json:"I"`
+	Hub        string        `json:"H"`
+	Method     string        `json:"M"`
+	Arguments  []interface{} `json:"A"`
+	Identifier string        `json:"I"`
 }
 
 // CallHub send a message to the signalr peer.  Sets unique identifier in threadsafe way.
 func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
 	//increment the message identifier.
 	c.callHubIDMutex.Lock()
-	payload.identifier = fmt.Sprintf("%d", c.nextID)
+	payload.Identifier = fmt.Sprintf("%d", c.nextID)
 	c.nextID++
 	c.callHubIDMutex.Unlock()
 
@@ -36,18 +35,22 @@ func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
 	}
 
 	//set the response future channel
-	c.setResponseChan(payload.identifier)
-
+	c.setResponseChan(payload.Identifier)
 	//send the message payload to the signalr peer
 	c.sendHubMessage(data)
 
 	var (
 		response *serverMessage
-		ok       bool
 	)
 
-	if response, ok = <-(c.responseChan(payload.identifier)); !ok {
+	response = <-(c.responseChan(payload.Identifier))
+
+	if response == nil {
 		c.sendErr(CallHubError(fmt.Sprintf("Call to method %s returned no result.", payload.Method)))
+		return
+	}
+	if response.Error != "" {
+		c.sendErr(CallHubError(response.Error))
 		return
 	}
 

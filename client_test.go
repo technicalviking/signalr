@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"testing"
 	"time"
-	//"fmt"
 )
 
 // TestNewDefault test the constructor with a default config

@@ -23,7 +23,8 @@ func TestConnect(t *testing.T) {
 
 	c := New(cfg).(*client)
 
-	timeout := time.NewTicker(time.Second * 10)
+	timeout := time.NewTicker(time.Second * 30)
+	c.heartbeatChan = make(chan Heartbeat, 5)
 
 	//Act
 
@@ -33,6 +34,10 @@ func TestConnect(t *testing.T) {
 	case err := <-c.errChan:
 		t.Fatalf("Error found!  %s\n", err.Error())
 	case <-timeout.C:
+		t.Fatalf("Timeout error")
+	case r := <-c.responseChan("default"):
+		t.Fatalf("what is r %+v", len(r.Data))
+	case <-c.heartbeatChan:
 	}
 
 }
@@ -61,7 +66,7 @@ func TestNegotiate(t *testing.T) {
 	}
 }
 
-func TestConnectWebSocket(t *testing.T) {
+/*func TestConnectWebSocket(t *testing.T) {
 
 	//Assemble
 	cfg := Config{
@@ -78,12 +83,15 @@ func TestConnectWebSocket(t *testing.T) {
 	c := New(cfg).(*client)
 	nresp := c.negotiate()
 
-	go func() {
-		for e := range c.errChan {
-			t.Fatalf("error found! %s", e.Error())
-		}
-	}()
+	c.heartbeatChan = make(chan Heartbeat)
 
 	c.connectWebSocket(nresp, []string{"c2"})
 
-}
+	select {
+	case e := <-c.errChan:
+		t.Fatalf("error found! %s", e.Error())
+	case hb := <-c.heartbeatChan:
+		t.Fatalf("HEARTBEAT %s", hb)
+	case <-c.responseChan("default"):
+	}
+}*/
