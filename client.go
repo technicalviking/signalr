@@ -165,14 +165,14 @@ func (c *client) dispatchMessage(msg serverMessage) {
 			rc <- &msg
 			c.delResponseChan(msg.Identifier)
 		} else {
-			c.sendErr(HubMessageError(fmt.Sprintf("No listener found for message with ID %s", msg.Identifier)))
+			c.heartbeatChan <- (AwkwardHeartbeat(fmt.Sprintf("No listener found for message with ID %s: %+v", msg.Identifier, msg)))
 		}
 
 	} else if len(msg.Data) == 0 {
 		if msg.Error != "" {
 			c.sendErr(HubMessageError(fmt.Sprintf("Error from signalr hub: %s", msg.Error)))
 		} else if c.heartbeatChan != nil {
-			c.heartbeatChan <- Heartbeat{}
+			c.heartbeatChan <- NormalHeartbeat{}
 		}
 	} else {
 		c.responseChan("default") <- &msg
