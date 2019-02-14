@@ -159,23 +159,28 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 }
 
 func (c *client) dispatchMessage(msg serverMessage) {
-	if len(msg.Identifier) > 0 {
 
+	if msg.Error != "" {
+		c.sendErr(HubMessageError(fmt.Sprintf("Error from signalr hub: %s", msg.Error)))
+		return
+	}
+
+	if len(msg.Identifier) > 0 {
 		if rc := c.responseChan(msg.Identifier); rc != nil {
 			rc <- &msg
 			c.delResponseChan(msg.Identifier)
+		} else if len(msg.Data) > 0 { //if "Data" is not empty, presume it's a subscription response.
+			for dataIndex := range msg.Data {
+				var dataPayload MessageDataPayload
+				if parseErr := json.Unmarshal(msg.Data[dataIndex], &dataPayload); parseErr != nil {
+					c.errChan <- parseErr
+				} else {
+					c.messageChan <- dataPayload
+				}
+			}
 		} else {
 			c.heartbeatChan <- (AwkwardHeartbeat(fmt.Sprintf("No listener found for message with ID %s: %+v", msg.Identifier, msg)))
 		}
-
-	} else if len(msg.Data) == 0 {
-		if msg.Error != "" {
-			c.sendErr(HubMessageError(fmt.Sprintf("Error from signalr hub: %s", msg.Error)))
-		} else if c.heartbeatChan != nil {
-			c.heartbeatChan <- NormalHeartbeat{}
-		}
-	} else {
-		c.responseChan("default") <- &msg
 	}
 }
 
