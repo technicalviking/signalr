@@ -9,13 +9,11 @@ type Heartbeat interface {
 	fmt.Stringer
 }
 
-type NormalHeartbeat struct {
-	Heartbeat
-}
+type NormalHeartbeat string
 
 //String implement Stringer interface
 func (hb NormalHeartbeat) String() string {
-	return "Thump thump!"
+	return fmt.Sprintf("Thump thump! - %s", hb)
 }
 
 //AwkwardHeartbeat test signalr implementation sends last hubmessage as aa heartbeat...?  Thanks bittrex.
