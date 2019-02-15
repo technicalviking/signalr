@@ -176,11 +176,14 @@ func (c *client) dispatchMessage(msg serverMessage) {
 					c.errChan <- parseErr
 				} else {
 					c.messageChan <- dataPayload
+					c.heartbeatChan <- NormalHeartbeat("Heartbeat refreshed by subscription signal.")
 				}
 			}
 		} else {
 			c.heartbeatChan <- (AwkwardHeartbeat(fmt.Sprintf("No listener found for message with ID %s: %+v", msg.Identifier, msg)))
 		}
+	} else {
+		c.heartbeatChan <- NormalHeartbeat("Default Heartbeat.")
 	}
 }
 
