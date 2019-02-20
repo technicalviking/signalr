@@ -166,6 +166,7 @@ func (c *client) dispatchMessage(msg serverMessage) {
 	}
 
 	if len(msg.Identifier) > 0 {
+
 		if rc := c.responseChan(msg.Identifier); rc != nil {
 			rc <- &msg
 			c.delResponseChan(msg.Identifier)
@@ -268,13 +269,12 @@ func New(c Config) Connection {
 	}
 
 	new := &client{
-		config:  c,
-		state:   Ready,
-		nextID:  1,
-		errChan: make(chan error, 5),
-		responseChannels: map[string]chan *serverMessage{
-			"default": make(chan *serverMessage, 5),
-		},
+		config:           c,
+		state:            Ready,
+		nextID:           1,
+		errChan:          make(chan error, 5),
+		messageChan:      make(chan MessageDataPayload),
+		responseChannels: map[string]chan *serverMessage{},
 	}
 
 	return new
