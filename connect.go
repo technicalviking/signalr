@@ -27,7 +27,9 @@ type negotiationResponse struct {
 
 func (c *client) Connect(hubs []string) {
 	if c.State() == Broken {
-		c.errChan <- ConnectError("Client in broken state.  Check config or create new client instance.")
+		c.sendErr(
+			ConnectError("Client in broken state.  Check config or create new client instance."),
+		)
 		return
 	}
 
@@ -60,7 +62,9 @@ func (c *client) negotiate() *negotiationResponse {
 	}
 
 	if request, err = http.NewRequest("GET", negotiationURL.String(), nil); err != nil {
-		c.errChan <- NegotiationError(err.Error())
+		c.sendErr(
+			NewNegotiationError("Unable to create new request", err),
+		)
 		c.setState(Broken)
 		return nil
 	}
@@ -72,7 +76,9 @@ func (c *client) negotiate() *negotiationResponse {
 	}
 
 	if response, err = c.config.Client.Do(request); err != nil {
-		c.errChan <- NegotiationError(err.Error())
+		c.sendErr(
+			NewNegotiationError("Unable to execute negotiation request", err),
+		)
 		c.setState(Broken)
 		return nil
 	}
@@ -80,14 +86,21 @@ func (c *client) negotiate() *negotiationResponse {
 	defer response.Body.Close()
 
 	if body, err = ioutil.ReadAll(response.Body); err != nil {
-		c.errChan <- NegotiationError(err.Error())
+		c.sendErr(
+			NewNegotiationError("Unable to read negotiation response body", err),
+		)
 		c.setState(Broken)
 		return nil
 	}
 
 	if err = json.Unmarshal(body, &result); err != nil {
-		err = fmt.Errorf("Failed to parse response '%s': %s", string(body), err.Error())
-		c.errChan <- NegotiationError(err.Error())
+		c.sendErr(
+			NewNegotiationError(
+				fmt.Sprintf("Unable to parse negotiation response: %s", string(body)),
+				err,
+			),
+		)
+
 		c.setState(Broken)
 		return nil
 	}
@@ -119,20 +132,33 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 		Jar:              c.config.Client.Jar,
 	}
 
-	var err error
+	var (
+		err  error
+		resp *http.Response
+	)
 
 	for i := 0; i <= 5; i++ {
 		if i == 5 {
 			c.setState(Broken)
-			c.errChan <- SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION.")
+			c.sendErr(
+				SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION."),
+			)
 			break
 		}
 
 		backoff := math.Pow(2.0, float64(i))
 		time.Sleep(time.Second * time.Duration(backoff))
 		//@todo incorporate the currently ignored http response parameter into socketConnectionError
-		if c.socket, _, err = socketDialer.Dial(connectionURL.String(), c.config.RequestHeaders); err != nil {
-			c.errChan <- SocketConnectionError(err.Error())
+		if c.socket, resp, err = socketDialer.Dial(connectionURL.String(), c.config.RequestHeaders); err != nil {
+			c.sendErr(
+				SocketConnectionError(
+					fmt.Sprintf(
+						"\n Unable to dial successfully: %s \n HTTP Response: %+v\n",
+						err.Error(),
+						resp,
+					),
+				),
+			)
 		} else {
 			break
 		}

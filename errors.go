@@ -9,12 +9,41 @@ func (ce ConnectError) Error() string {
 	return fmt.Sprintf("ConnectError: %s", string(ce))
 }
 
-//NegotiationError error created when negotiation step of connection fails.
-type NegotiationError string
+type baseError struct {
+	error
+	prefix string
+	source string
+	err    error
+}
 
-// Error implement Error interface
-func (ne NegotiationError) Error() string {
-	return fmt.Sprintf("NegotiationError: %s", string(ne))
+func (b baseError) Error() string {
+	return fmt.Sprintf(
+		"%s \n Source: %s \n %Error: s",
+		b.prefix,
+		b.source,
+		b.err.Error(),
+	)
+}
+
+func newBaseError(prefix string, source string, err error) baseError {
+	return baseError{
+		prefix: fmt.Sprintf("SignalR %s", prefix),
+		source: source,
+		err:    err,
+	}
+}
+
+//NegotiationError error created when negotiation step of connection fails.
+type NegotiationError baseError
+
+func NewNegotiationError(source string, err error) NegotiationError {
+	return NegotiationError(
+		newBaseError(
+			"NegotiationError",
+			source,
+			err,
+		),
+	)
 }
 
 //SocketConnectionError error created when connectWebSocket step of connection fails.
@@ -26,11 +55,16 @@ func (sce SocketConnectionError) Error() string {
 }
 
 //SocketError error created when websocket.ReadMessage or websocket.WriteMessage returns an error..
-type SocketError string
+type SocketError baseError
 
-// Error implement Error interface
-func (se SocketError) Error() string {
-	return fmt.Sprintf("SocketError: %s", string(se))
+func newSocketError(source string, err error) SocketError {
+	return SocketError(
+		newBaseError(
+			"SocketError",
+			source,
+			err,
+		),
+	)
 }
 
 //TimeoutError error created when dispatch loop times out
@@ -50,8 +84,25 @@ func (hme HubMessageError) Error() string {
 }
 
 // CallHubError error generated during an attempt to send a message to the Signalr hub
-type CallHubError string
+type CallHubError baseError
 
-func (che CallHubError) Error() string {
-	return fmt.Sprintf("CallHubError: %s", string(che))
+func newCallHubError(source string, err error) CallHubError {
+	return CallHubError(
+		newBaseError(
+			"CallHubError",
+			source,
+			err,
+		),
+	)
+}
+
+type MDPParseError baseError
+
+func newMDPParseError(source string, err error) MDPParseError {
+	return MDPParseError(newBaseError(
+		"MessageDataPayloadParseError",
+		source,
+		err,
+	),
+	)
 }

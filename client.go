@@ -128,27 +128,70 @@ func (c *client) State() ConnectionState {
 	return c.state
 }
 
-//listenToWebSocketData receives all signals from the current websocket.  uses timeout based on signalr negotiation response
+// listenToWebSocketData receives all signals from the current websocket.
+// uses timeout based on signalr negotiation response
+// @TODO if the socket loop returns, make sure the state is properly communicated to consuming applications.
 func (c *client) listenToWebSocketData(timeout time.Duration) {
 	var (
-		data    []byte
 		message serverMessage
 	)
 
 	for {
 		c.socket.SetReadDeadline(time.Now().Add(timeout))
 		if err := c.socket.ReadJSON(&message); err != nil {
-			switch err.(type) {
+			switch v := err.(type) {
 			case *json.UnmarshalTypeError:
-				c.sendErr(SocketError(fmt.Sprintf("Unable to parse message from payload %s: %s\n", string(data), err.Error())))
+				c.sendErr(
+					newSocketError(
+						fmt.Sprintf(
+							"json.UnmarshalTypeError \n Value: %s\n Type: %s \n Offset: %d \n Struct: %s, Field %s",
+							v.Value,
+							v.Type.String(),
+							v.Offset,
+							v.Struct,
+							v.Field,
+						),
+						err,
+					),
+				)
+				continue
+			case *json.UnsupportedTypeError:
+				c.sendErr(
+					newSocketError(
+						fmt.Sprintf(
+							"json.UnsupportedTypeError\n Type: %s \n ",
+							v.Type.String(),
+						),
+						err,
+					),
+				)
+				continue
+			case *json.UnsupportedValueError:
+				c.sendErr(
+					newSocketError(
+						fmt.Sprintf(
+							"json.UnsupportedValueError\n Value: %+v \n",
+							v.Value,
+						),
+						err,
+					),
+				)
 				continue
 			case net.Error:
 				c.sendErr(TimeoutError(fmt.Sprintf("Keepalive timeout reached: %s", err.Error())))
 			default:
-				c.sendErr(SocketError(err.Error()))
+				c.sendErr(
+					newSocketError(
+						"Unknown error type!!!!! Unable to convert inbound socketdata to serverMessage type.",
+						err,
+					),
+				)
 			}
 
 			c.setState(Disconnected)
+			c.sendErr(
+				fmt.Errorf("SignalR socket disconnected."),
+			)
 			return
 		}
 
@@ -174,7 +217,15 @@ func (c *client) dispatchMessage(msg serverMessage) {
 			for dataIndex := range msg.Data {
 				var dataPayload MessageDataPayload
 				if parseErr := json.Unmarshal(msg.Data[dataIndex], &dataPayload); parseErr != nil {
-					c.errChan <- parseErr
+					c.sendErr(
+						newMDPParseError(
+							fmt.Sprintf(
+								"Unable to parse msg data into dataPayload type\n Data: %s \n ",
+								string(msg.Data[dataIndex]),
+							),
+							parseErr,
+						),
+					)
 				} else {
 					c.messageChan <- dataPayload
 					c.heartbeatChan <- NormalHeartbeat("Heartbeat refreshed by subscription signal.")

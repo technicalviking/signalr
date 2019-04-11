@@ -2,6 +2,7 @@ package signalr
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/gorilla/websocket"
@@ -30,7 +31,16 @@ func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
 
 	//attempt to marshal the payload
 	if data, err = json.Marshal(payload); err != nil {
-		c.sendErr(CallHubError(err.Error()))
+		c.sendErr(
+			newCallHubError(
+				fmt.Sprintf(
+					"Unable to marshal the callhub payload: %+v",
+					payload,
+				),
+				err,
+			),
+		)
+
 		return
 	}
 
@@ -46,17 +56,36 @@ func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
 	response = <-(c.responseChan(payload.Identifier))
 
 	if response == nil {
-		c.sendErr(CallHubError(fmt.Sprintf("Call to method %s returned no result.", payload.Method)))
+		c.sendErr(
+			newCallHubError(
+				fmt.Sprintf("Call to method %s returned no result.", payload.Method),
+				nil,
+			),
+		)
 		return
 	}
 	if response.Error != "" {
-		c.sendErr(CallHubError(response.Error))
+		c.sendErr(
+			newCallHubError(
+				"Error detected within responseChan payload.",
+				errors.New(response.Error),
+			),
+		)
 		return
 	}
 
 	if err = json.Unmarshal(response.Result, resultPayload); err != nil {
-		e := fmt.Sprintf("Unable to parse response into type provided for call to %s: %s", payload.Method, string(response.Result))
-		c.sendErr(CallHubError(e))
+		//e := fmt.Sprintf("Unable to parse response into type provided for call to %s: %s", payload.Method,
+		//string(response.Result))
+		c.sendErr(
+			newCallHubError(
+				fmt.Sprintf("Unable to parse response: \n Method: %s \n response.Result: %s \n",
+					payload.Method,
+					string(response.Result),
+				),
+				err,
+			),
+		)
 	}
 
 	return
@@ -67,7 +96,12 @@ func (c *client) sendHubMessage(data []byte) {
 	defer c.socketWriteMutex.Unlock()
 
 	if err := c.socket.WriteMessage(websocket.TextMessage, data); err != nil {
-		c.sendErr(SocketError(err.Error()))
+		c.sendErr(
+			newSocketError(
+				"Unable to write message to socket hub",
+				err,
+			),
+		)
 	}
 
 	return
