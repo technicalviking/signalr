@@ -37,18 +37,17 @@ func (c *client) Connect(hubs []string) {
 
 	nResp := c.negotiate()
 	c.connectWebSocket(nResp, hubs)
-	fmt.Printf("what is the response timeout?  ", nResp.KeepAliveTimeout)
 
 	go c.handleSocketCommunication(nResp, hubs)
 }
 
 func (c *client) handleSocketCommunication(nResp *negotiationResponse, hubs []string) {
 	for {
-		c.listenToWebSocketData(time.Second * time.Duration(nResp.KeepAliveTimeout))
+		c.listenToWebSocketData(time.Second * time.Duration(nResp.KeepAliveTimeout)) //20 seconds, as of 2019.04.16 --DM
 
 		//if the code gets here, that means the socket disconnected.
 		c.setState(Reconnecting)
-		c.reconnectWebSocket(nResp, hubs, "");
+		c.reconnectWebSocket(nResp, hubs);
 
 		if (c.State() == Broken) {
 			return
@@ -180,8 +179,14 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 	}
 }
 
-func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string, messageId string) {
+func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string) {
 	if c.State() == Broken {
+		return
+	}
+
+	// if we get here without having recieved a single message, try to connect instead.
+	if c.messageID == "" {
+		c.connectWebSocket(params, hubs);
 		return
 	}
 
@@ -194,7 +199,7 @@ func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string, 
 			"clientProtocol":  []string{params.ProtocolVersion},
 			"connectionToken": []string{params.ConnectionToken},
 			"connectionData":  []string{string(castHubNamesToString(hubs))},
-			"messageId":       []string{messageId},
+			"messageId":       []string{c.messageID},
 			"_":               []string{fmt.Sprintf("%d", time.Now().Unix()*1000)},
 		}.Encode(),
 	}

@@ -109,6 +109,9 @@ type client struct {
 	heartbeatChan      chan Heartbeat
 	heartbeatChanMutex sync.Mutex
 
+	messageID      string //hold reference to most recent messageId
+	messageIDMutex sync.Mutex
+
 	//external pipe for server messages
 	/*routedMessageChan      chan interface{}
 	routedMessageChanMutex sync.RWMutex */
@@ -142,7 +145,7 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 	var (
 		message     serverMessage
 		pingTimer   = time.NewTimer(time.Second * 5)
-		socketPulse chan interface{}
+		socketPulse = make(chan interface{})
 	)
 
 	defer func() {
@@ -155,12 +158,12 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 
 		for {
 			select {
-			case t := <-pingTimer.C:
-				fmt.Printf("what is timer.C? %+v", t)
+			case <-pingTimer.C:
 				c.sendPing()
 			case <-socketPulse:
 			}
 			if !pingTimer.Stop() {
+				// ensure the channel is drained.
 				<-pingTimer.C
 			}
 			pingTimer.Reset(time.Second * 5)
@@ -168,7 +171,7 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 	})()
 
 	for {
-	  socketPulse <- nil
+		socketPulse <- nil
 		c.socket.SetReadDeadline(time.Now().Add(timeout))
 		if err := c.socket.ReadJSON(&message); err != nil {
 			switch v := err.(type) {
@@ -241,7 +244,7 @@ func (c *client) dispatchMessage(msg serverMessage) {
 	}
 
 	if len(msg.Identifier) > 0 {
-
+		c.updateMessageID(msg.Identifier)
 		if rc := c.responseChan(msg.Identifier); rc != nil {
 			rc <- &msg
 			c.delResponseChan(msg.Identifier)
@@ -269,6 +272,13 @@ func (c *client) dispatchMessage(msg serverMessage) {
 	} else {
 		c.heartbeatChan <- NormalHeartbeat("Default Heartbeat.")
 	}
+}
+
+func (c *client) updateMessageID(msgID string) {
+	c.messageIDMutex.Lock()
+	defer c.messageIDMutex.Unlock()
+
+	c.messageID = msgID
 }
 
 func (c *client) responseChan(key string) chan *serverMessage {
@@ -354,7 +364,7 @@ func New(c Config) Connection {
 	new := &client{
 		config:           c,
 		state:            Ready,
-		stateChan:				make(chan ConnectionState, 5),
+		stateChan:        make(chan ConnectionState, 5),
 		nextID:           1,
 		errChan:          make(chan error, 5),
 		messageChan:      make(chan MessageDataPayload),

@@ -23,8 +23,6 @@ var (
 func (c client) sendPing() {
   var result string
   c.CallHub(pingMessage, &result)
-
-  fmt.Printf("ping result:  %s\n", result);
 }
 
 // CallHub send a message to the signalr peer.  Sets unique identifier in threadsafe way.
