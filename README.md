@@ -62,13 +62,12 @@ Due to my own personal requirements using this lib, I've made efforts to have in
 
 ## TODOs
 
-* Required setup for installation using vgo.
-* GODOC integration
-* More Testing!!!!
+* MORE TESTING (especially related to connection resiliency).
 
 
 ## Contributions
 
-Reach out to me, make a PR!
+Make a Pull Request (or "Merge Request" as Gitlab calls it).  I'm actively using this library, so any pull requests will receive prompt attention from me.
+Fork the project and make it your own!  I only ask that if you do that, lemme know!  If a fork includes featuers I don't have time or desire to implement, I'll put a link to the forked repo with full credit!
 
 Happy coding!
