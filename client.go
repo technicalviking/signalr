@@ -72,6 +72,7 @@ type MessageDataPayload struct {
 
 //client implemntation of Connection interface.
 type client struct {
+	Connection
 	//persist sanitized config
 	config Config
 
@@ -79,6 +80,8 @@ type client struct {
 	state ConnectionState
 	//mutex to make changes to state threadsafe
 	stateMutex sync.RWMutex
+	//chan to broadcast the state of the signalr connection.
+	stateChan chan ConnectionState
 
 	//active websocket, assigned durinng connection process.
 	socket *websocket.Conn
@@ -128,15 +131,44 @@ func (c *client) State() ConnectionState {
 	return c.state
 }
 
+func (c *client) SubscribeToState() <-chan ConnectionState {
+	return c.stateChan
+}
+
 // listenToWebSocketData receives all signals from the current websocket.
 // uses timeout based on signalr negotiation response
 // @TODO if the socket loop returns, make sure the state is properly communicated to consuming applications.
 func (c *client) listenToWebSocketData(timeout time.Duration) {
 	var (
-		message serverMessage
+		message     serverMessage
+		pingTimer   = time.NewTimer(time.Second * 5)
+		socketPulse chan interface{}
 	)
 
+	defer func() {
+		if !pingTimer.Stop() {
+			<-pingTimer.C
+		}
+	}()
+
+	go (func() {
+
+		for {
+			select {
+			case t := <-pingTimer.C:
+				fmt.Printf("what is timer.C? %+v", t)
+				c.sendPing()
+			case <-socketPulse:
+			}
+			if !pingTimer.Stop() {
+				<-pingTimer.C
+			}
+			pingTimer.Reset(time.Second * 5)
+		}
+	})()
+
 	for {
+	  socketPulse <- nil
 		c.socket.SetReadDeadline(time.Now().Add(timeout))
 		if err := c.socket.ReadJSON(&message); err != nil {
 			switch v := err.(type) {
@@ -322,6 +354,7 @@ func New(c Config) Connection {
 	new := &client{
 		config:           c,
 		state:            Ready,
+		stateChan:				make(chan ConnectionState, 5),
 		nextID:           1,
 		errChan:          make(chan error, 5),
 		messageChan:      make(chan MessageDataPayload),

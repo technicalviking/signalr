@@ -37,9 +37,23 @@ func (c *client) Connect(hubs []string) {
 
 	nResp := c.negotiate()
 	c.connectWebSocket(nResp, hubs)
+	fmt.Printf("what is the response timeout?  ", nResp.KeepAliveTimeout)
 
-	go c.listenToWebSocketData(time.Second * time.Duration(nResp.KeepAliveTimeout))
-	//go c.beginDispatchLoop(nResp.KeepAliveTimeout)
+	go c.handleSocketCommunication(nResp, hubs)
+}
+
+func (c *client) handleSocketCommunication(nResp *negotiationResponse, hubs []string) {
+	for {
+		c.listenToWebSocketData(time.Second * time.Duration(nResp.KeepAliveTimeout))
+
+		//if the code gets here, that means the socket disconnected.
+		c.setState(Reconnecting)
+		c.reconnectWebSocket(nResp, hubs, "");
+
+		if (c.State() == Broken) {
+			return
+		}
+	}
 }
 
 func (c *client) negotiate() *negotiationResponse {
@@ -160,6 +174,66 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 				),
 			)
 		} else {
+			c.setState(Connected)
+			break
+		}
+	}
+}
+
+func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string, messageId string) {
+	if c.State() == Broken {
+		return
+	}
+
+	connectionURL := url.URL{
+		Scheme: "wss",
+		Host:   c.config.ConnectionURL.Host,
+		Path:   c.config.ReconnectPath,
+		RawQuery: url.Values{
+			"transport":       []string{"webSockets"},
+			"clientProtocol":  []string{params.ProtocolVersion},
+			"connectionToken": []string{params.ConnectionToken},
+			"connectionData":  []string{string(castHubNamesToString(hubs))},
+			"messageId":       []string{messageId},
+			"_":               []string{fmt.Sprintf("%d", time.Now().Unix()*1000)},
+		}.Encode(),
+	}
+
+	socketDialer := &websocket.Dialer{
+		Proxy:            http.ProxyFromEnvironment,
+		HandshakeTimeout: 30 * time.Second,
+		Jar:              c.config.Client.Jar,
+	}
+
+	var (
+		err  error
+		resp *http.Response
+	)
+
+	for i := 0; i <= 5; i++ {
+		if i == 5 {
+			c.setState(Broken)
+			c.sendErr(
+				SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION."),
+			)
+			break
+		}
+
+		backoff := math.Pow(2.0, float64(i))
+		time.Sleep(time.Second * time.Duration(backoff))
+		//@todo incorporate the currently ignored http response parameter into socketConnectionError
+		if c.socket, resp, err = socketDialer.Dial(connectionURL.String(), c.config.RequestHeaders); err != nil {
+			c.sendErr(
+				SocketConnectionError(
+					fmt.Sprintf(
+						"\n Unable to dial successfully: %s \n HTTP Response: %+v\n",
+						err.Error(),
+						resp,
+					),
+				),
+			)
+		} else {
+			c.setState(Connected)
 			break
 		}
 	}

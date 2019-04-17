@@ -8,6 +8,7 @@ type Connection interface {
 	ListenToErrors() <-chan error
 	ListenToHubResponses() <-chan MessageDataPayload
 	ListenToHeartbeat() <-chan Heartbeat
+	SubscribeToState() <-chan ConnectionState
 
 	CallHub(CallHubPayload, interface{})
 }

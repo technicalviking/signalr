@@ -10,10 +10,21 @@ import (
 
 //CallHubPayload parameters for sending message to signalr hub.  identifier is set internally.  Arguments must be json marshallable.
 type CallHubPayload struct {
-	Hub        string        `json:"H"`
-	Method     string        `json:"M"`
-	Arguments  []interface{} `json:"A"`
-	Identifier string        `json:"I"`
+	Hub        string        `json:"H,omitempty"`
+	Method     string        `json:"M,omitempty"`
+	Arguments  []interface{} `json:"A,omitempty"`
+	Identifier string        `json:"I,omitempty"`
+}
+
+var (
+  pingMessage = CallHubPayload{}
+)
+
+func (c client) sendPing() {
+  var result string
+  c.CallHub(pingMessage, &result)
+
+  fmt.Printf("ping result:  %s\n", result);
 }
 
 // CallHub send a message to the signalr peer.  Sets unique identifier in threadsafe way.
