@@ -49,9 +49,11 @@ The channels returned are buffered channels, so that rather than hanging, the co
 
 The one exception to the above rule is scenarios where calls to `CallHub` result in an immediate response, detected when the response payload from the signalr peer has a matching identifier to a sent message.  In that scenario, the result message is sent back as a return fromm `CallHub`... unless it's an error.
 
-### I hate `if err != nil`... so I don't ask you to use it.
+### There's two ways to track most errors.
 
 That errChan above?  It gives ALL the errors from the lib, whether or not they're from the signalr peer.  You might be wondering if that makes the application more difficult to debug, but I've tried to cover that front too.  The error chan will NEVER output *just* an error.  It will be one of the error types defined in this lib's `errors.go` file.  If you're not sure which one you've got, you can do a type switch, or alternately parse the resulting string (each type's implementation of the Error interface indicates its own type).
+Also any method that should return an error (when one happens) will do so, enabling you to tie errors to 
+specific calls as necessary.
 
 ### Miscellaneous
 
