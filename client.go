@@ -144,96 +144,86 @@ func (c *client) SubscribeToState() <-chan ConnectionState {
 func (c *client) listenToWebSocketData(timeout time.Duration) {
 	var (
 		message     serverMessage
-		pingTimer   = time.NewTimer(time.Second * 5)
 		socketPulse = make(chan interface{})
 	)
-
-	defer func() {
-		if !pingTimer.Stop() {
-			<-pingTimer.C
-		}
-	}()
-
-	go (func() {
-
-		for {
-			select {
-			case <-pingTimer.C:
-				c.sendPing()
-			case <-socketPulse:
-			}
-			if !pingTimer.Stop() {
-				// ensure the channel is drained.
-				<-pingTimer.C
-			}
-			pingTimer.Reset(time.Second * 5)
-		}
-	})()
 
 	for {
 		socketPulse <- nil
 		c.socket.SetReadDeadline(time.Now().Add(timeout))
-		if err := c.socket.ReadJSON(&message); err != nil {
-			switch v := err.(type) {
-			case *json.UnmarshalTypeError:
-				c.sendErr(
-					newSocketError(
-						fmt.Sprintf(
-							"json.UnmarshalTypeError \n Value: %s\n Type: %s \n Offset: %d \n Struct: %s, Field %s",
-							v.Value,
-							v.Type.String(),
-							v.Offset,
-							v.Struct,
-							v.Field,
-						),
-						err,
-					),
-				)
-				continue
-			case *json.UnsupportedTypeError:
-				c.sendErr(
-					newSocketError(
-						fmt.Sprintf(
-							"json.UnsupportedTypeError\n Type: %s \n ",
-							v.Type.String(),
-						),
-						err,
-					),
-				)
-				continue
-			case *json.UnsupportedValueError:
-				c.sendErr(
-					newSocketError(
-						fmt.Sprintf(
-							"json.UnsupportedValueError\n Value: %+v \n",
-							v.Value,
-						),
-						err,
-					),
-				)
-				continue
-			case net.Error:
-				c.sendErr(TimeoutError(fmt.Sprintf("Keepalive timeout reached: %s", err.Error())))
-			default:
-				c.sendErr(
-					newSocketError(
-						"Unknown error type!!!!! Unable to convert inbound socketdata to serverMessage type.",
-						err,
-					),
-				)
+		socketReadErr := c.socket.ReadJSON(&message);
+		if  socketReadErr != nil {
+			if c.handleSocketReadErr(socketReadErr) {
+				return
 			}
-
-			c.setState(Disconnected)
-			c.sendErr(
-				fmt.Errorf("SignalR socket disconnected."),
-			)
-			return
+			continue
 		}
 
 		//no error
 		go c.dispatchMessage(message)
 	}
 
+}
+
+// handleSocketReadErr logic for handling the kind of error found when trying to read from gorilla websocket.
+// returns true if the error is effectively fatal for the connection.
+func (c *client) handleSocketReadErr(err error) bool {
+	switch v := err.(type) {
+	case *json.UnmarshalTypeError:
+		c.sendErr(
+			newSocketError(
+				fmt.Sprintf(
+					"json.UnmarshalTypeError \n Value: %s\n Type: %s \n Offset: %d \n Struct: %s, Field %s",
+					v.Value,
+					v.Type.String(),
+					v.Offset,
+					v.Struct,
+					v.Field,
+				),
+				err,
+			),
+		)
+		return false
+	case *json.UnsupportedTypeError:
+		c.sendErr(
+			newSocketError(
+				fmt.Sprintf(
+					"json.UnsupportedTypeError\n Type: %s \n ",
+					v.Type.String(),
+				),
+				err,
+			),
+		)
+		return false
+	case *json.UnsupportedValueError:
+		c.sendErr(
+			newSocketError(
+				fmt.Sprintf(
+					"json.UnsupportedValueError\n Value: %+v \n",
+					v.Value,
+				),
+				err,
+			),
+		)
+		return false
+	case net.Error:
+		c.sendErr(
+			TimeoutError(fmt.Sprintf("Keepalive timeout reached: %s", err.Error())),
+		)
+	default:
+		c.sendErr(
+			newSocketError(
+				"Unknown error type!!!!! Unable to convert inbound socketdata to serverMessage type.",
+				err,
+			),
+		)
+	}
+
+	c.setState(Disconnected)
+	c.sendErr(
+		fmt.Errorf("SignalR socket disconnected."),
+	)
+
+	return true
 }
 
 func (c *client) dispatchMessage(msg serverMessage) {

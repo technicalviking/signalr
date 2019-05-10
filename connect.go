@@ -25,37 +25,39 @@ type negotiationResponse struct {
 	LogPollDelay            float32
 }
 
-func (c *client) Connect(hubs []string) {
+func (c *client) Connect(hubs []string) error {
 	if c.State() == Broken {
-		c.sendErr(
-			ConnectError("Client in broken state.  Check config or create new client instance."),
-		)
-		return
+		return ConnectError("Client in broken state.  Check config or create new client instance.")
 	}
 
 	c.state = Connecting
 
-	nResp := c.negotiate()
-	c.connectWebSocket(nResp, hubs)
+	nResp, negotiationErr := c.negotiate()
+	if negotiationErr != nil {
+		return negotiationErr
+	}
 
-	go c.handleSocketCommunication(nResp, hubs)
+	if err := c.connectWebSocket(nResp, hubs); err != nil {
+		return err
+	}
+
+	return c.handleSocketCommunication(nResp, hubs)
+
 }
 
-func (c *client) handleSocketCommunication(nResp *negotiationResponse, hubs []string) {
+func (c *client) handleSocketCommunication(nResp *negotiationResponse, hubs []string) error {
 	for {
 		c.listenToWebSocketData(time.Second * time.Duration(nResp.KeepAliveTimeout)) //20 seconds, as of 2019.04.16 --DM
 
 		//if the code gets here, that means the socket disconnected.
 		c.setState(Reconnecting)
-		c.reconnectWebSocket(nResp, hubs);
-
-		if (c.State() == Broken) {
-			return
+		if err := c.reconnectWebSocket(nResp, hubs); err != nil {
+			return err
 		}
 	}
 }
 
-func (c *client) negotiate() *negotiationResponse {
+func (c *client) negotiate() (*negotiationResponse, error) {
 	var (
 		request  *http.Request
 		response *http.Response
@@ -75,11 +77,10 @@ func (c *client) negotiate() *negotiationResponse {
 	}
 
 	if request, err = http.NewRequest("GET", negotiationURL.String(), nil); err != nil {
-		c.sendErr(
-			NewNegotiationError("Unable to create new request", err),
-		)
+		err = NewNegotiationError("Unable to create new request", err)
+		c.sendErr(err)
 		c.setState(Broken)
-		return nil
+		return nil, err
 	}
 
 	for k, values := range c.config.RequestHeaders {
@@ -89,41 +90,40 @@ func (c *client) negotiate() *negotiationResponse {
 	}
 
 	if response, err = c.config.Client.Do(request); err != nil {
-		c.sendErr(
-			NewNegotiationError("Unable to execute negotiation request", err),
-		)
+		err = NewNegotiationError("Unable to execute negotiation request", err)
+		c.sendErr(err)
 		c.setState(Broken)
-		return nil
+		return nil, err
 	}
 
 	defer response.Body.Close()
 
 	if body, err = ioutil.ReadAll(response.Body); err != nil {
-		c.sendErr(
-			NewNegotiationError("Unable to read negotiation response body", err),
-		)
+		err = NewNegotiationError("Unable to read negotiation response body", err)
+		c.sendErr(err)
 		c.setState(Broken)
-		return nil
+		return nil, err
 	}
 
 	if err = json.Unmarshal(body, &result); err != nil {
-		c.sendErr(
-			NewNegotiationError(
-				fmt.Sprintf("Unable to parse negotiation response: %s", string(body)),
-				err,
-			),
+		err = NewNegotiationError(
+			fmt.Sprintf("Unable to parse negotiation response: %s", string(body)),
+			err,
 		)
-
+		c.sendErr(err)
 		c.setState(Broken)
-		return nil
+		return nil, err
 	}
 
-	return &result
+	return &result, nil
 }
 
-func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
+func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) error {
 	if c.State() == Broken {
-		return
+		return NewBrokenWebSocketError(
+			"connectWebSocket",
+			fmt.Errorf("unable to connect, client object in broken state"),
+		)
 	}
 
 	connectionURL := url.URL{
@@ -153,10 +153,9 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 	for i := 0; i <= 5; i++ {
 		if i == 5 {
 			c.setState(Broken)
-			c.sendErr(
-				SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION."),
-			)
-			break
+			err = SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION.")
+			c.sendErr(err)
+			return err
 		}
 
 		backoff := math.Pow(2.0, float64(i))
@@ -177,17 +176,22 @@ func (c *client) connectWebSocket(params *negotiationResponse, hubs []string) {
 			break
 		}
 	}
+
+	return nil
 }
 
-func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string) {
+func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string) error {
 	if c.State() == Broken {
-		return
+		return NewBrokenWebSocketError(
+			"reconnectWebSocket",
+			fmt.Errorf("unable to reconnect, client object in broken state"),
+		)
 	}
 
 	// if we get here without having recieved a single message, try to connect instead.
 	if c.messageID == "" {
-		c.connectWebSocket(params, hubs);
-		return
+		return c.connectWebSocket(params, hubs)
+
 	}
 
 	connectionURL := url.URL{
@@ -218,10 +222,9 @@ func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string) 
 	for i := 0; i <= 5; i++ {
 		if i == 5 {
 			c.setState(Broken)
-			c.sendErr(
-				SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION."),
-			)
-			break
+			err = SocketConnectionError("MAX RETRIES REACHED.  ABORTING CONNECTION.")
+			c.sendErr(err)
+			return err
 		}
 
 		backoff := math.Pow(2.0, float64(i))
@@ -242,6 +245,8 @@ func (c *client) reconnectWebSocket(params *negotiationResponse, hubs []string) 
 			break
 		}
 	}
+
+	return nil
 }
 
 func castHubNamesToString(hubs []string) []byte {

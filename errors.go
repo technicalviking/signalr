@@ -106,3 +106,25 @@ func newMDPParseError(source string, err error) MDPParseError {
 	),
 	)
 }
+
+
+
+// BrokenWebSocketError describes a broken websocket error
+type BrokenWebSocketError struct {
+	error
+	prefix string
+	source string
+	err error
+}
+
+func (b BrokenWebSocketError) Error() string {
+	return fmt.Sprintf("%s (%s): %s", b.prefix, b.source, b.err)
+}
+
+func NewBrokenWebSocketError(source string, err error) *BrokenWebSocketError{
+	return &BrokenWebSocketError{
+		prefix: "Broken Web Socket Error",
+		source: source,
+		err: err,
+	}
+}
