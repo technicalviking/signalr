@@ -20,13 +20,15 @@ var (
   pingMessage = CallHubPayload{}
 )
 
-func (c client) sendPing() {
+// SendPing Sends a ping message to the signalr hub.
+func (c client) SendPing() error {
   var result string
-  c.CallHub(pingMessage, &result)
+  return c.CallHub(pingMessage, &result)
 }
 
 // CallHub send a message to the signalr peer.  Sets unique identifier in threadsafe way.
-func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
+// Result of the callhub is set into resultPayload
+func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) error {
 	//increment the message identifier.
 	c.callHubIDMutex.Lock()
 	payload.Identifier = fmt.Sprintf("%d", c.nextID)
@@ -40,23 +42,24 @@ func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
 
 	//attempt to marshal the payload
 	if data, err = json.Marshal(payload); err != nil {
-		c.sendErr(
-			newCallHubError(
-				fmt.Sprintf(
-					"Unable to marshal the callhub payload: %+v",
-					payload,
-				),
-				err,
+		err = newCallHubError(
+			fmt.Sprintf(
+				"Unable to marshal the callhub payload: %+v",
+				payload,
 			),
+			err,
 		)
+		c.sendErr(err)
 
-		return
+		return err
 	}
 
 	//set the response future channel
 	c.setResponseChan(payload.Identifier)
 	//send the message payload to the signalr peer
-	c.sendHubMessage(data)
+	if err = c.sendHubMessage(data); err != nil {
+		return err
+	}
 
 	var (
 		response *serverMessage
@@ -65,53 +68,49 @@ func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) {
 	response = <-(c.responseChan(payload.Identifier))
 
 	if response == nil {
-		c.sendErr(
-			newCallHubError(
-				fmt.Sprintf("Call to method %s returned no result.", payload.Method),
-				nil,
-			),
+		err = newCallHubError(
+			fmt.Sprintf("Call to method %s returned no result.", payload.Method),
+			nil,
 		)
-		return
+		c.sendErr(err)
+		return err
 	}
 	if response.Error != "" {
-		c.sendErr(
-			newCallHubError(
-				"Error detected within responseChan payload.",
-				errors.New(response.Error),
-			),
+		err = newCallHubError(
+			"Error detected within responseChan payload.",
+			errors.New(response.Error),
 		)
-		return
+		c.sendErr(err)
+		return err
 	}
 
 	if err = json.Unmarshal(response.Result, resultPayload); err != nil {
-		//e := fmt.Sprintf("Unable to parse response into type provided for call to %s: %s", payload.Method,
-		//string(response.Result))
-		c.sendErr(
-			newCallHubError(
-				fmt.Sprintf("Unable to parse response: \n Method: %s \n response.Result: %s \n",
-					payload.Method,
-					string(response.Result),
-				),
-				err,
+		err = newCallHubError(
+			fmt.Sprintf("Unable to parse response: \n Method: %s \n response.Result: %s \n",
+				payload.Method,
+				string(response.Result),
 			),
+			err,
 		)
+		c.sendErr(err)
+		return err
 	}
 
-	return
+	return nil
 }
 
-func (c *client) sendHubMessage(data []byte) {
+func (c *client) sendHubMessage(data []byte) error {
 	c.socketWriteMutex.Lock()
 	defer c.socketWriteMutex.Unlock()
 
 	if err := c.socket.WriteMessage(websocket.TextMessage, data); err != nil {
-		c.sendErr(
-			newSocketError(
-				"Unable to write message to socket hub",
-				err,
-			),
+		err = newSocketError(
+			"Unable to write message to socket hub",
+			err,
 		)
+		c.sendErr(err)
+		return err
 	}
 
-	return
+	return nil
 }

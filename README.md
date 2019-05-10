@@ -2,7 +2,7 @@
 
 SignalR Connection Interface Written in Go
 
-Inspired heavily by github.com/hweom/signalr.  Credit where credit is due.
+Forked from github.com/hweom/signalr.  Credit where credit is due.
 
 ## Installation
 
