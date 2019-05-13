@@ -124,6 +124,7 @@ func (c *client) setState(newState ConnectionState) {
 	//cannot change state once broken.
 	if c.state < Broken {
 		c.state = newState
+		c.stateChan <- newState
 	}
 }
 
