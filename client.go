@@ -158,7 +158,7 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 		}
 
 		//no error
-		go c.dispatchMessage(message)
+		c.dispatchMessage(message)
 	}
 }
 
@@ -236,6 +236,7 @@ func (c *client) dispatchMessage(msg serverMessage) {
 		if rc := c.responseChan(msg.Identifier); rc != nil {
 			rc <- &msg
 			c.delResponseChan(msg.Identifier)
+
 		} else if len(msg.Data) > 0 { //if "Data" is not empty, presume it's a subscription response.
 			for dataIndex := range msg.Data {
 				var dataPayload MessageDataPayload
@@ -250,16 +251,36 @@ func (c *client) dispatchMessage(msg serverMessage) {
 						),
 					)
 				} else {
+					//fmt.Printf("sending data payload %+v\n", dataPayload)
+
 					c.messageChan <- dataPayload
-					c.heartbeatChan <- NormalHeartbeat("Heartbeat refreshed by subscription signal.")
+					//fmt.Println("sent payload")
+					c.sendHeartbeat(
+						NormalHeartbeat("Heartbeat refreshed by subscription signal."),
+					)
 				}
 			}
 		} else {
-			c.heartbeatChan <- (AwkwardHeartbeat(fmt.Sprintf("No listener found for message with ID %s: %+v", msg.Identifier, msg)))
+			c.sendHeartbeat(
+				AwkwardHeartbeat(fmt.Sprintf("No listener found for message with ID %s: %+v", msg.Identifier, msg)),
+			)
 		}
 	} else {
-		c.heartbeatChan <- NormalHeartbeat("Default Heartbeat.")
+		c.sendHeartbeat(
+			NormalHeartbeat("Default Heartbeat."),
+		)
 	}
+}
+
+func (c *client) sendHeartbeat(hb Heartbeat) {
+	// if nothing is listening for a hearbeat yet, this is a noop.
+	if c.heartbeatChan == nil {
+		return
+	}
+
+	c.heartbeatChanMutex.Lock()
+	defer c.heartbeatChanMutex.Unlock()
+	c.heartbeatChan <- hb
 }
 
 func (c *client) updateMessageID(msgID string) {
