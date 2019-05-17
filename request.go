@@ -26,14 +26,19 @@ func (c client) SendPing() error {
   return c.CallHub(pingMessage, &result)
 }
 
+func (c *client) getNextIdentifier() int {
+	//increment the message identifier.
+	c.callHubIDMutex.Lock()
+	c.nextID = c.nextID + 1
+	c.callHubIDMutex.Unlock()
+
+	return c.nextID
+}
+
 // CallHub send a message to the signalr peer.  Sets unique identifier in threadsafe way.
 // Result of the callhub is set into resultPayload
 func (c *client) CallHub(payload CallHubPayload, resultPayload interface{}) error {
-	//increment the message identifier.
-	c.callHubIDMutex.Lock()
-	payload.Identifier = fmt.Sprintf("%d", c.nextID)
-	c.nextID++
-	c.callHubIDMutex.Unlock()
+	payload.Identifier = fmt.Sprintf("%d", c.getNextIdentifier())
 
 	var (
 		data []byte

@@ -145,11 +145,9 @@ func (c *client) SubscribeToState() <-chan ConnectionState {
 func (c *client) listenToWebSocketData(timeout time.Duration) {
 	var (
 		message     serverMessage
-		socketPulse = make(chan interface{})
 	)
 
 	for {
-		socketPulse <- nil
 		c.socket.SetReadDeadline(time.Now().Add(timeout))
 		socketReadErr := c.socket.ReadJSON(&message);
 		if  socketReadErr != nil {
@@ -162,7 +160,6 @@ func (c *client) listenToWebSocketData(timeout time.Duration) {
 		//no error
 		go c.dispatchMessage(message)
 	}
-
 }
 
 // handleSocketReadErr logic for handling the kind of error found when trying to read from gorilla websocket.
